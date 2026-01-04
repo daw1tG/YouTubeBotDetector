@@ -1,5 +1,7 @@
 console.log("Clean Recommended running...");
 
+// discontinuing indefinitely
+
 function debounce(func, delay=500){
     let timeOutId;
 
@@ -119,3 +121,5 @@ window.addEventListener("yt-navigate-finish", () => {
 
     waitForContentsToLoad(observer)
   });
+
+  // document.querySelector("#player-ads > ytd-player-legacy-desktop-watch-ads-renderer > ytd-companion-slot-renderer")

@@ -1,12 +1,40 @@
 console.log("Bot detector running...");
 
 
-function debounce(func, delay=500){
-    let timeOutId;
+// function debounce(func, delay=500){
+//     let timeOutId;
+
+//     return function (...args){
+//         clearTimeout(timeOutId)
+//         timeOutId = setTimeout(()=>func.apply(this, args), delay)
+//     }
+// }
+
+function throttle(func, delay=500){
+    let shouldWait
+    let waitingArgs
+
+    const timeoutFunc = () => {
+        if (waitingArgs == null){
+            shouldWait = false
+        }
+        else {
+            func(...waitingArgs)
+            waitingArgs = null
+            setTimeout(timeoutFunc , delay)
+        }
+    }
 
     return function (...args){
-        clearTimeout(timeOutId)
-        timeOutId = setTimeout(()=>func.apply(this, args), delay)
+        if (shouldWait){
+            waitingArgs = args
+            return
+        }
+
+        func(...args)
+        shouldWait = true
+
+        setTimeout(timeoutFunc , delay)
     }
 }
 
@@ -43,7 +71,7 @@ function checkForBotMessage(comment, text){
     }
 
     // check common phrases
-    const commonBotPhrases = /(genuine|i needed th(is|at)|ress?onate|emotionally|that'?s rare|colorful|adore)/i
+    const commonBotPhrases = /(genuine|i needed th(is|at)|ress?onate|emotionally|that'?s rare|colorful|adore|just being(?: so)? real|confident)/i
     if (commonBotPhrases.test(text)){
         flags += 1000
     }
@@ -61,7 +89,7 @@ function checkForBotMessage(comment, text){
         flags += 10
     }
 
-    return flags > -1 // <-- abitrary number until fully training model
+    return flags > -1
 }
 
 
@@ -72,7 +100,7 @@ const femaleNamesRegex = new RegExp(femaleNames
 
 function isBotUsername(username) {
     console.log("checking: ", username)
-    const crillicRegex = /^\p{Script=Cyrillic}+$/u
+    const crillicRegex = /^\p{Script=Cyrillic}+/u
     const cleanedUsername = username.slice(1).trim()
     if (cleanedUsername.match(crillicRegex)){
         return true;
@@ -143,7 +171,8 @@ function checkProfileWithYTInitialData(profileUrl, username) {
                         ?.urlEndpoint;
 
                 if (externalLink 
-                    && !/(?:youtube){2}|tiktok|insta|x\.com/i.test(externalLink.url)) {
+                    && !/(?:youtube){2}|tiktok|twitch|discord|twitter|insta|x\.com/i
+                    .test(externalLink.url)) {
                     console.log(username, " is bot for sure");
                     if (setOfBotPFPs != null){
                         setOfBotPFPs.add(profilePic)
@@ -202,7 +231,6 @@ async function scanComment(comment) {
     let text = message.childNodes[0].textContent
 
     const username = authorSpan.textContent.trim();
-    console.log("checking ", username)
     if (!isBotUsername(username)){
         console.log(`${username} is not a bot`)
         return
@@ -233,27 +261,42 @@ async function scanComment(comment) {
     // comment.remove();
 }
 
+
+let observer
 function watchComments(commentsSection) {
-const proccessNewComments = debounce((comments)=>{
+    const throttleWithArrayArg = (comments)=>{
         for (const comment of comments){
             if (comment && comment.tagName === "YTD-COMMENT-THREAD-RENDERER") {
-                // console.log("New comment loaded: ", comment);
-                if (comment.getAttribute("checked") !== "true") scanComment(comment);
-                else comment.setAttribute("checked", "true");
-
+                console.log("New comment loaded: ", comment);
+                scanComment(comment);
             }
         }
-    }, 500)
+    }
+
+    const throttleWithSingleArg = (comment)=>{
+        if (comment && comment.tagName === "YTD-COMMENT-THREAD-RENDERER") {
+            console.log("New comment loaded: ", comment);
+            scanComment(comment);
+        }
+    }
+    const proccessNewComments = throttle(throttleWithArrayArg, 500)
 
     let newComments = [];
-    const observer = new MutationObserver((mutations) => {
+    observer = new MutationObserver((mutations) => {
         for (const mutation of mutations) {
             newComments.push(...mutation.addedNodes)
         }
+
+        // pause detection
+        
+        if (isScrolling || document.hidden){
+            return
+        }
         
         if (newComments.length) {
+            // newComments.forEach(comment => proccessNewComments(comment))
             proccessNewComments(newComments)
-            // newComments = []
+            newComments = []
         }
     });
   
@@ -284,6 +327,24 @@ window.addEventListener("yt-navigate-finish", () => {
         oldComments == null
     }
 });
+
+
+// pause while scrolling fast
+let isScrolling = false
+let scrollTimeout = null
+
+window.addEventListener("scroll", () => {
+    isScrolling = true
+
+    if (scrollTimeout){
+        clearTimeout(scrollTimeout)
+    }
+
+    scrollTimeout = setTimeout(() => {
+        isScrolling = false
+    }, 150)
+}, { passive: true })
+
   
 
 
@@ -321,5 +382,3 @@ window.addEventListener("yt-navigate-finish", () => {
 // //  <button id = 'author-thumbnail-button'>
 //         //<yt-img-shadow>
 //             //<img height ='40' width ='40' src={reused}>
-
-    
