@@ -38,11 +38,45 @@ function throttle(func, delay=500){
     }
 }
 
+async function checkServerStatus(){
+    let res = await fetch("http://localhost:3000")
+    return await res.json()
+}
+
+async function postCommentDataToServer(commentInfo){
+    let { status } = await checkServerStatus()
+    if (status !== "running"){
+        return "server not running"
+    }
+    let res = await fetch("http://localhost:3000/api/collect", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(commentInfo)
+    })
+
+    return await res.json()
+}
+
+async function getBotProbability(commentInfo){
+    let { status } = await checkServerStatus()
+    if (status !== "running"){
+        return "server not running"
+    }
+    let res = await fetch("http://localhost:3000/api/predict", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(commentInfo)
+    })
+
+    return await res.json()
+}
+
 function stripEmojis(text){
     return text.replace( /(\p{Extended_Pictographic}(?:\u200D\p{Extended_Pictographic})*)/gu, "")
 }
 
 let oldComments;
+const flaggedEmojisSet = new Set(flaggedEmojis)
 
 function checkForBotMessage(comment, text){
     const emojiRegex = /(\p{Extended_Pictographic}(?:\u200D\p{Extended_Pictographic})*)/gu;
@@ -71,7 +105,7 @@ function checkForBotMessage(comment, text){
     }
 
     // check common phrases
-    const commonBotPhrases = /(genuine|i needed th(is|at)|ress?onate|emotionally|that'?s rare|colorful|adore|just being(?: so)? real|confident)/i
+    const commonBotPhrases = /(genuine|i needed th(is|at)|ress?onate|emotionally|that'?s rare|colorful|adore|just being(?: so)? real|confident|hits?( me)? deep)/i
     if (commonBotPhrases.test(text)){
         flags += 1000
     }
@@ -106,7 +140,7 @@ function isBotUsername(username) {
         return true;
     }
 
-    console.log("match: ", cleanedUsername.match(femaleNamesRegex))
+    // console.log("match: ", cleanedUsername.match(femaleNamesRegex))
 
     return femaleNamesRegex.test(cleanedUsername)
 }
@@ -157,11 +191,11 @@ function checkProfileWithYTInitialData(profileUrl, username) {
                         ?.channelMetadataRenderer
                         ?.avatar.thumbnails
 
-                let setOfBotPFPs = grabBotPFPs()
+                // let setOfBotPFPs = grabBotPFPs()
 
-                if (setOfBotPFPs && setOfBotPFPs.has(profilePic)){
-                    resolve(true)
-                }
+                // if (setOfBotPFPs && setOfBotPFPs.has(profilePic)){
+                //     resolve(true)
+                // }
 
                 const externalLink = ytInitialData?.header?.pageHeaderRenderer
                         ?.content?.pageHeaderViewModel
@@ -173,11 +207,11 @@ function checkProfileWithYTInitialData(profileUrl, username) {
                 if (externalLink 
                     && !/(?:youtube){2}|tiktok|twitch|discord|twitter|insta|x\.com/i
                     .test(externalLink.url)) {
-                    console.log(username, " is bot for sure");
-                    if (setOfBotPFPs != null){
-                        setOfBotPFPs.add(profilePic)
-                        updateBotPFPs(setOfBotPFPs)
-                    }
+                    // console.log(username, " is bot for sure");
+                    // if (setOfBotPFPs != null){
+                    //     setOfBotPFPs.add(profilePic)
+                    //     updateBotPFPs(setOfBotPFPs)
+                    // }
                     resolve(true);
                     return;
                 }
@@ -200,10 +234,10 @@ function checkProfileWithYTInitialData(profileUrl, username) {
 
                 if (descriptionRegex.test(description) ||
                     descriptionRegex.test(description2)) {
-                    if (setOfBotPFPs != null){
-                        setOfBotPFPs.add(profilePic)
-                        updateBotPFPs(setOfBotPFPs)
-                    }
+                    // if (setOfBotPFPs != null){
+                    //     setOfBotPFPs.add(profilePic)
+                    //     updateBotPFPs(setOfBotPFPs)
+                    // }
                     resolve(true);
                     return;
                 }
@@ -221,44 +255,57 @@ function checkProfile(username){
 
 async function scanComment(comment) {
     // check messages and usernames
-    const authorSpan = comment.querySelector('#author-text span');
-    if (!authorSpan) {
-        console.log("no authorSpan")
-        return;
-    }
-
-    let message = comment.querySelector("yt-attributed-string#content-text")
-    let text = message.childNodes[0].textContent
-
-    const username = authorSpan.textContent.trim();
-    if (!isBotUsername(username)){
-        console.log(`${username} is not a bot`)
-        return
-    }
-    if (!checkForBotMessage(comment, text)) {
-        console.log(`${username} is not a bot`)
+    const commentInfo = grabCommentInfo(comment)
+    commentInfo.bot = false
+    // comment.style.border = '2px solid blue';
+    let { status } = await checkServerStatus()
+    if (!isBotUsername(commentInfo.username) || !checkForBotMessage(comment, commentInfo.text)){
+        console.log(`${commentInfo.username} is not a bot`)
+        if (status === "running"){
+            let res = await postCommentDataToServer(commentInfo)
+            console.log(res)
+        }
         return
     }
 
     let botProfile = await checkProfile(username)
     if (!botProfile){
-        console.log(`${username} might be a bot`)
-
-        // comment.style.border = '2px solid white';
-        // comment.style.backgroundColor = '#8B0000';
+        if (status === "running"){
+            let res = await postCommentDataToServer(commentInfo)
+            console.log(res)
+        }
         return
     }
     else {
+        console.log('🚨 Potential Bot Detected:', username);
         comment.style.border = '2px solid white';
         comment.style.backgroundColor = '#8B0000';
-    }
-    console.log('🚨 Potential Bot Detected:', username);
 
-    // test
-    // comment.style.border = '2px solid white';
-    // comment.style.backgroundColor = '#8B0000';
+        commentInfo.bot = true
+        if (status === "running"){
+            let res = await postCommentDataToServer(commentInfo)
+            console.log(res)
+        }
+        return
+    }
 
     // comment.remove();
+}
+
+function grabCommentInfo(comment){
+    const authorSpan = comment.querySelector('#author-text span');
+    if (!authorSpan) {
+        console.log("no authorSpan")
+        return;
+    }
+    const username = authorSpan.textContent.trim();
+
+    let message = comment.querySelector("yt-attributed-string#content-text")
+    let text = message.childNodes[0].textContent
+
+    let pfp = comment.querySelector("img").src
+
+    return { username: username, text: text, pfp: pfp }
 }
 
 
@@ -267,7 +314,7 @@ function watchComments(commentsSection) {
     const throttleWithArrayArg = (comments)=>{
         for (const comment of comments){
             if (comment && comment.tagName === "YTD-COMMENT-THREAD-RENDERER") {
-                console.log("New comment loaded: ", comment);
+                // console.log("New comment loaded: ", comment);
                 scanComment(comment);
             }
         }
@@ -275,7 +322,7 @@ function watchComments(commentsSection) {
 
     const throttleWithSingleArg = (comment)=>{
         if (comment && comment.tagName === "YTD-COMMENT-THREAD-RENDERER") {
-            console.log("New comment loaded: ", comment);
+            // console.log("New comment loaded: ", comment);
             scanComment(comment);
         }
     }
@@ -284,20 +331,23 @@ function watchComments(commentsSection) {
     let newComments = [];
     observer = new MutationObserver((mutations) => {
         for (const mutation of mutations) {
-            newComments.push(...mutation.addedNodes)
+            for (const node of mutation.addedNodes) {
+                if (node?.tagName === "YTD-COMMENT-THREAD-RENDERER") {
+                    visibilityObserver.observe(node)
+                    // node.style.border = '2px solid red'; // red == detected, blue == not bot
+                    //newComments.push(node)
+                }
+            }
         }
 
         // pause detection
         
-        if (isScrolling || document.hidden){
-            return
-        }
-        
-        if (newComments.length) {
-            // newComments.forEach(comment => proccessNewComments(comment))
-            proccessNewComments(newComments)
-            newComments = []
-        }
+        // if (isScrolling || document.hidden) return
+  
+        // if (newComments.length) {
+        //     proccessNewComments(newComments)
+        //     newComments = []
+        // }
     });
   
     observer.observe(commentsSection, { childList: true});
@@ -338,12 +388,52 @@ window.addEventListener("scroll", () => {
 
     if (scrollTimeout){
         clearTimeout(scrollTimeout)
+        // console.log("scrolling")
     }
 
     scrollTimeout = setTimeout(() => {
         isScrolling = false
+       //  console.log("stopped scrolling")
+        // console.log("scrolledPast: ", scrolledPast)
+
+        // scrolledPast?.forEach(comment => visibilityObserver.observe(comment))
+        // scrolledPast = []
     }, 150)
 }, { passive: true })
+
+const processNewCommentsWithIntersectionObserver = throttle((comments) => {
+    for (const comment of comments) {
+        scanComment(comment)
+    }
+}, 500)
+
+const scannedComments = new WeakSet()
+let scrolledPast
+
+const visibilityObserver = new IntersectionObserver(entries => {
+
+    if (scrolledPast == null){
+        scrolledPast = []
+    }
+
+    for (const entry of entries) {
+        const comment = entry.target
+        
+        // if (isScrolling) continue
+        entry.target.style.border = '2px solid red'
+        if (!entry.isIntersecting ) { //|| isScrolling
+            //scrolledPast.push(comment)
+            continue
+        }
+
+        entry.target.style.border = '2px solid blue'
+        if (scannedComments.has(comment)) continue
+
+        scannedComments.add(comment)
+        scanComment(comment)
+    }
+     
+}, { threshold: 0.15})
 
   
 
