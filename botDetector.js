@@ -38,7 +38,7 @@ function throttle(func, delay=500){
     }
 }
 
-const API = "http://localhost:3000/api/collect"
+const API = "http://localhost:3000/"
 async function postToAPI(path, data) {
     let res = await fetch(API + path, {
         method: "POST",
@@ -131,31 +131,6 @@ function isBotUsername(username) {
     return femaleNamesRegex.test(cleanedUsername)
 }
 
-function grabBotPFPs(){
-    let setOfBotPFPs
-    try {
-        chrome.runtime.sendMessage(
-            { action: "get PFPs"},
-             response => setOfBotPFPs = response
-        )
-    } catch (error) {
-        console.log(err)
-    }
-
-    return setOfBotPFPs
-}
-
-function updateBotPFPs(set){
-    try {
-        chrome.runtime.sendMessage(
-            { action: "update PFPs", set: set },
-             response => console.log(response)
-        )
-    } catch (error) {
-        console.log(err)
-    }
-}
-
 function checkProfileWithYTInitialData(profileUrl, username) {
     return new Promise(resolve => {
         chrome.runtime.sendMessage({ action: "get yTInitialData", url: profileUrl },
@@ -177,12 +152,6 @@ function checkProfileWithYTInitialData(profileUrl, username) {
                         ?.channelMetadataRenderer
                         ?.avatar.thumbnails
 
-                // let setOfBotPFPs = grabBotPFPs()
-
-                // if (setOfBotPFPs && setOfBotPFPs.has(profilePic)){
-                //     resolve(true)
-                // }
-
                 const externalLink = ytInitialData?.header?.pageHeaderRenderer
                         ?.content?.pageHeaderViewModel
                         ?.attribution?.attributionViewModel
@@ -193,11 +162,6 @@ function checkProfileWithYTInitialData(profileUrl, username) {
                 if (externalLink 
                     && !/(?:youtube){2}|tiktok|twitch|discord|twitter|insta|x\.com/i
                     .test(externalLink.url)) {
-                    // console.log(username, " is bot for sure");
-                    // if (setOfBotPFPs != null){
-                    //     setOfBotPFPs.add(profilePic)
-                    //     updateBotPFPs(setOfBotPFPs)
-                    // }
                     resolve(true);
                     return;
                 }
@@ -220,10 +184,6 @@ function checkProfileWithYTInitialData(profileUrl, username) {
 
                 if (descriptionRegex.test(description) ||
                     descriptionRegex.test(description2)) {
-                    // if (setOfBotPFPs != null){
-                    //     setOfBotPFPs.add(profilePic)
-                    //     updateBotPFPs(setOfBotPFPs)
-                    // }
                     resolve(true);
                     return;
                 }
@@ -253,14 +213,14 @@ async function scanComment(comment) {
         return
     }
 
-    let botProfile = await checkProfile(username)
+    let botProfile = await checkProfile(commentInfo.username)
     if (!botProfile){
         let res = await postCommentDataToServer(commentInfo)
         console.log(res)
         return
     }
     else {
-        console.log('🚨 Potential Bot Detected:', username);
+        console.log('🚨 Potential Bot Detected:', commentInfo.username);
         comment.style.border = '2px solid white';
         comment.style.backgroundColor = '#8B0000';
 
@@ -337,8 +297,16 @@ function watchComments(commentsSection) {
 }
 
 function waitForCommentsToLoad(){
-    const commentsContainer = document.querySelector("#comments");
-    const commentsSection = commentsContainer.querySelector("div#contents")
+    let commentsContainer
+    let commentsSection
+    if (window.pathname.match(/shorts/)){
+        commentsContainer = document.querySelector("#contents > ytd-comments")
+        commentsSection = commentsContainer.querySelector("div#contents")
+    }
+    else if (window.pathname.match(/watch/)){
+        commentsContainer = document.querySelector("#comments");
+        commentsSection = commentsContainer.querySelector("div#contents")
+    }
   
     if (!commentsSection) {
         console.log("No comments section found yet. Retrying...");
