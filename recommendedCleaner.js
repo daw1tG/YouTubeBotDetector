@@ -1,6 +1,6 @@
 console.log("Clean Recommended running...");
 
-// discontinuing indefinitely
+// discontinuing indefinitely to focus scope of project
 
 function debounce(func, delay=500){
     let timeOutId;

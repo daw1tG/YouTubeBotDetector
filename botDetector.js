@@ -38,37 +38,23 @@ function throttle(func, delay=500){
     }
 }
 
-async function checkServerStatus(){
-    let res = await fetch("http://localhost:3000")
+const API = "http://localhost:3000/api/collect"
+async function postToAPI(path, data) {
+    let res = await fetch(API + path, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(data)
+    })
+
     return await res.json()
 }
 
 async function postCommentDataToServer(commentInfo){
-    let { status } = await checkServerStatus()
-    if (status !== "running"){
-        return "server not running"
-    }
-    let res = await fetch("http://localhost:3000/api/collect", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify(commentInfo)
-    })
-
-    return await res.json()
+    return await postToAPI("api/collect", commentInfo)
 }
 
 async function getBotProbability(commentInfo){
-    let { status } = await checkServerStatus()
-    if (status !== "running"){
-        return "server not running"
-    }
-    let res = await fetch("http://localhost:3000/api/predict", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify(commentInfo)
-    })
-
-    return await res.json()
+    return await postToAPI("api/predict", commentInfo)
 }
 
 function stripEmojis(text){
@@ -258,22 +244,19 @@ async function scanComment(comment) {
     const commentInfo = grabCommentInfo(comment)
     commentInfo.bot = false
     // comment.style.border = '2px solid blue';
-    let { status } = await checkServerStatus()
-    if (!isBotUsername(commentInfo.username) || !checkForBotMessage(comment, commentInfo.text)){
+    if (!isBotUsername(commentInfo.username) 
+        || !checkForBotMessage(comment, commentInfo.text)){
         console.log(`${commentInfo.username} is not a bot`)
-        if (status === "running"){
-            let res = await postCommentDataToServer(commentInfo)
-            console.log(res)
-        }
+
+        let res = await postCommentDataToServer(commentInfo)
+        console.log(res)
         return
     }
 
     let botProfile = await checkProfile(username)
     if (!botProfile){
-        if (status === "running"){
-            let res = await postCommentDataToServer(commentInfo)
-            console.log(res)
-        }
+        let res = await postCommentDataToServer(commentInfo)
+        console.log(res)
         return
     }
     else {
@@ -282,10 +265,8 @@ async function scanComment(comment) {
         comment.style.backgroundColor = '#8B0000';
 
         commentInfo.bot = true
-        if (status === "running"){
-            let res = await postCommentDataToServer(commentInfo)
-            console.log(res)
-        }
+        let res = await postCommentDataToServer(commentInfo)
+        console.log(res)
         return
     }
 
