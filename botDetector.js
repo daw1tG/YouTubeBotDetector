@@ -39,14 +39,21 @@ function throttle(func, delay=500){
 }
 
 const API = "http://localhost:3000/"
+let serverRunning = false
 async function postToAPI(path, data) {
-    let res = await fetch(API + path, {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify(data)
-    })
-
-    return await res.json()
+    try {
+        let res = await fetch(API + path, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(data)
+        })
+        if (res) serverRunning = true
+    
+        return await res.json()
+    } catch (err) {
+        serverRunning = false
+        return null
+    }
 }
 
 async function postCommentDataToServer(commentInfo){
@@ -199,6 +206,34 @@ function checkProfile(username){
     return checkProfileWithYTInitialData(profileUrl, username) 
 }
 
+function storeCommentDataInExtension(commentInfo){
+    try {
+        chrome.runtime.sendMessage({ action: "store data", data: commentInfo })
+        console.log("Data stored")
+    } catch (error) {
+        console.log("Failed to save comment data")
+        return
+    }
+}
+
+const throttleSavedData = throttle(data => {
+    for (let commentInfo of data){
+        postCommentDataToServer(commentInfo)
+    }
+}, 1000)
+
+function loadSavedCommentData(){
+    try {
+        if (!serverRunning) return
+        chrome.runtime.sendMessage({ action: "retrieve data"}, data => {
+            throttleSavedData(data)
+        })
+    } catch (error) {
+        console.log("Failed to retrieve comment data")
+        return
+    }
+}
+
 async function scanComment(comment) {
     // check messages and usernames
     const commentInfo = grabCommentInfo(comment)
@@ -209,14 +244,16 @@ async function scanComment(comment) {
         console.log(`${commentInfo.username} is not a bot`)
 
         let res = await postCommentDataToServer(commentInfo)
-        console.log(res)
+        // console.log(res)
+        if (!res) storeCommentDataInExtension(commentInfo)
         return
     }
 
     let botProfile = await checkProfile(commentInfo.username)
     if (!botProfile){
         let res = await postCommentDataToServer(commentInfo)
-        console.log(res)
+        // console.log(res)
+        if (!res) storeCommentDataInExtension(commentInfo)
         return
     }
     else {
@@ -226,7 +263,8 @@ async function scanComment(comment) {
 
         commentInfo.bot = true
         let res = await postCommentDataToServer(commentInfo)
-        console.log(res)
+        if (!res) storeCommentDataInExtension(commentInfo)
+        // console.log(res)
         return
     }
 
@@ -299,11 +337,11 @@ function watchComments(commentsSection) {
 function waitForCommentsToLoad(){
     let commentsContainer
     let commentsSection
-    if (window.pathname.match(/shorts/)){
+    if (window.location.pathname.match(/shorts/)){
         commentsContainer = document.querySelector("#contents > ytd-comments")
         commentsSection = commentsContainer.querySelector("div#contents")
     }
-    else if (window.pathname.match(/watch/)){
+    else if (window.location.pathname.match(/watch/)){
         commentsContainer = document.querySelector("#comments");
         commentsSection = commentsContainer.querySelector("div#contents")
     }
@@ -325,6 +363,7 @@ window.addEventListener("yt-navigate-finish", () => {
         waitForCommentsToLoad();
         oldComments == null
     }
+    loadSavedCommentData()
 });
 
 

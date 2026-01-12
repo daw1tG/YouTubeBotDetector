@@ -11,6 +11,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse)=>{
         })
         .catch(err => sendResponse({ success: false, error: err.toString() }))
     }
+    else if (message.action == "store data"){
+        chrome.storage.local.get(["saved"]).then(result => {
+            const oldData = result.saved || []
+			chrome.storage.local.set({ saved: [ ...oldData, message.data]})
+		})
+    }
+    else if (message.action == "retrieve data"){
+       chrome.storage.local.get(["saved"]).then(result => {
+			sendResponse(result.saved)
+		})
+        .then(()=>chrome.storage.local.set({ saved: []}))
+    }
 
     return true;
 })
