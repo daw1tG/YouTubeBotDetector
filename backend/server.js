@@ -3,61 +3,52 @@ import cors from "cors"
 import fs from "fs"
 
 const app = express()
-const PORT = 3000
+const PORT = process.env.PORT || 3000
 
-app.use((req, res, next) => {
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-    res.setHeader("Access-Control-Allow-Private-Network", "true");
+/*
+    TODO:
+        replace csv with postgres
+        create model
+
+*/
+
+// app.use((req, res, next) => {
+//     res.setHeader("Access-Control-Allow-Origin", "*");
+//     res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+//     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+//     res.setHeader("Access-Control-Allow-Private-Network", "true");
   
-    if (req.method === "OPTIONS") {
-      return res.sendStatus(204);
-    }
+//     if (req.method === "OPTIONS") {
+//       return res.sendStatus(204);
+//     }
   
-    next();
-  });
+//     next();
+//   });
   
 
 app.use(express.json())
 app.use(cors({ origin: "*", methods: ["GET", "POST"] }))
 
+app.get('/', (req, res)=>{
+    res.sendStatus(200).json({status:"running"})
+})
+
 // write training data
-app.post("/api/collect", (req, res) =>{
-    try {
-        const { username, text, pfp, bot} = req.body
+app.post("/api/collect", async (req, res) =>{
+    const { data, list } = req.body
 
-        if (!text || !username){
-            return res.status(400).json({ error: "Missing Data" })
+    if (list){
+        console.log("writing stored comments")
+        let resultArray = []
+        for (let comment of data){
+            resultArray.push(await writeDataToCSV(comment))
         }
-
-        const safe = val => `"${String(val).replace(/"/g, '""')}"`
-
-        const data = [
-            safe(username),
-            safe(text),
-            safe(pfp),
-            safe(bot)
-        ].join(",") + "\n"
-
-        fs.appendFile(
-            "bot-data.csv",
-            data,
-            err =>{
-                if (err) {
-                    console.error('Error writing file:', err);
-                    res.status(500).json({ error: "Server error" })
-                } else {
-                    console.log('File has been written successfully.');
-                    res.json({ status: "success" })
-                }
-            }
-        )
-
-        // const bot 
-    } catch (err) {
-        console.log(err)
-        res.status(500).json({ error: "Server error" })
+        console.log("writing complete")
+        return res.json(resultArray)
+    }
+    else {
+        const {status, message} = await writeDataToCSV(data)
+        return res.status(status).json(message)
     }
 })
 
@@ -82,10 +73,41 @@ app.post("/api/predict", (req, res) => {
     }
 })
 
+function writeDataToCSV({ username, text, pfp, bot}){
+    return new Promise((resolve, reject)=> {
+        if (!text || !username){
+            return resolve({ status:400, message:{ error: "Missing Data" }})
+        }
+
+        const safe = val => `"${String(val).replace(/"/g, '""')}"`
+
+        const data = [
+            safe(username),
+            safe(text),
+            safe(pfp),
+            safe(bot)
+        ].join(",") + "\n"
+
+        fs.appendFile(
+            "bot-data.csv",
+            data,
+            err =>{
+                if (err) {
+                    console.error('Error writing file:', err);
+                    return resolve({ status:500, message:{ error: "Server error" }})
+                } else {
+                    console.log('File has been written successfully.');
+                    return resolve({ status:200, message:{ comment: username }})
+                }
+            }
+        )
+    })
+}
+
 function mlModel(data){
     return Math.random()
 }
 
 app.listen(PORT, () => {
-    console.log(`API running on http://localhost:${PORT}`)
+    console.log(`API running on ${PORT}`)
 })

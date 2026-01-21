@@ -38,7 +38,7 @@ function throttle(func, delay=500){
     }
 }
 
-const API = "http://localhost:3000/"
+const API = "youtubebotdetector-production.up.railway.app/" //"http://localhost:3000/"
 let serverRunning = false
 async function postToAPI(path, data) {
     try {
@@ -71,17 +71,20 @@ function stripEmojis(text){
 let oldComments;
 const flaggedEmojisSet = new Set(flaggedEmojis)
 
-function checkForBotMessage(comment, text){
+function checkForBotMessage({username, text}){
+    const messageData = {}
     const emojiRegex = /(\p{Extended_Pictographic}(?:\u200D\p{Extended_Pictographic})*)/gu;
     const hasEmojis = text.match(emojiRegex)
     let flags = 0
-    // to do
+    // username check
+    messageData.hasFemaleNameInUsername = isBotUsername(username)
     // emojis
     if (hasEmojis){
         flags += hasEmojis.length
         for (let emoji of hasEmojis){
             if (flaggedEmojisSet.has(emoji)){
                 flags += 5
+                messageData.hasFlaggedEmoji = true
             }
         }
         
@@ -92,6 +95,7 @@ function checkForBotMessage(comment, text){
     const cleanedText = stripEmojis(text) // bots copy comments and append emojis at the end
     if (oldComments.has(cleanedText)){
         flags += 1000000 // for sure a bot
+        messageData.isDuplicateComment = true
     }
     else {
         oldComments.add(cleanedText)
@@ -101,12 +105,14 @@ function checkForBotMessage(comment, text){
     const commonBotPhrases = /(genuine|i needed th(is|at)|ress?onate|emotionally|that'?s rare|colorful|adore|just being(?: so)? real|confident|hits?( me)? deep)/i
     if (commonBotPhrases.test(text)){
         flags += 1000
+        messageData.hasCommonBotPhrases = true
     }
 
     // check for time stamp
     const hasTimeStamp = /\d?\d:\d\d/
     if (hasTimeStamp.test(text)){
         flags -= 1000 // probably human
+        messageData.hasTimeStamp = true
     }
 
     // ! spam
@@ -114,9 +120,12 @@ function checkForBotMessage(comment, text){
 
     if (exclamationCount.length > 3){
         flags += 10
+        messageData.exclamationSpam = true
     }
+    console.log(username, ": ", messageData)
 
-    return flags > -1
+    return true
+    // return messageData
 }
 
 
@@ -224,12 +233,15 @@ const throttleSavedData = throttle(data => {
 
 function loadSavedCommentData(){
     try {
-        if (!serverRunning) return
+        if (!serverRunning) {
+            setTimeout(loadSavedCommentData, 10000)
+            return
+        }
         chrome.runtime.sendMessage({ action: "retrieve data"}, data => {
-            throttleSavedData(data)
+            postCommentDataToServer({data:data, list:true})
         })
     } catch (error) {
-        console.log("Failed to retrieve comment data")
+        console.log("Failed to retrieve stored comment data")
         return
     }
 }
@@ -239,19 +251,18 @@ async function scanComment(comment) {
     const commentInfo = grabCommentInfo(comment)
     commentInfo.bot = false
     // comment.style.border = '2px solid blue';
-    if (!isBotUsername(commentInfo.username) 
-        || !checkForBotMessage(comment, commentInfo.text)){
+    if (!checkForBotMessage(commentInfo)){
         console.log(`${commentInfo.username} is not a bot`)
 
-        let res = await postCommentDataToServer(commentInfo)
+        let res = await postCommentDataToServer({data:commentInfo, list:false})
         // console.log(res)
-        if (!res) storeCommentDataInExtension(commentInfo)
+        if (!res) storeCommentDataInExtension({data:commentInfo, list:false})
         return
     }
 
     let botProfile = await checkProfile(commentInfo.username)
     if (!botProfile){
-        let res = await postCommentDataToServer(commentInfo)
+        let res = await postCommentDataToServer({data:commentInfo, list:false})
         // console.log(res)
         if (!res) storeCommentDataInExtension(commentInfo)
         return
@@ -262,7 +273,7 @@ async function scanComment(comment) {
         comment.style.backgroundColor = '#8B0000';
 
         commentInfo.bot = true
-        let res = await postCommentDataToServer(commentInfo)
+        let res = await postCommentDataToServer({data:commentInfo, list:false})
         if (!res) storeCommentDataInExtension(commentInfo)
         // console.log(res)
         return
@@ -311,7 +322,7 @@ function watchComments(commentsSection) {
     observer = new MutationObserver((mutations) => {
         for (const mutation of mutations) {
             for (const node of mutation.addedNodes) {
-                if (node?.tagName === "YTD-COMMENT-THREAD-RENDERER") {
+                if (node?.tagName === "YTD-COMMENT-THREAD-RENDERER" || node?.tagName === "YTD-COMMENT-VIEW-MODEL") {
                     visibilityObserver.observe(node)
                     // node.style.border = '2px solid red'; // red == detected, blue == not bot
                     //newComments.push(node)
@@ -338,8 +349,7 @@ function waitForCommentsToLoad(){
     let commentsContainer
     let commentsSection
     if (window.location.pathname.match(/shorts/)){
-        commentsContainer = document.querySelector("#contents > ytd-comments")
-        commentsSection = commentsContainer.querySelector("div#contents")
+        commentsSection = document.querySelector("div#contents > ytd-comment-thread-renderer")?.parentNode
     }
     else if (window.location.pathname.match(/watch/)){
         commentsContainer = document.querySelector("#comments");
@@ -359,7 +369,7 @@ function waitForCommentsToLoad(){
 window.addEventListener("yt-navigate-finish", () => {
     console.log("Navigation finished on YouTube");
     // in development
-    if (window.location.pathname.includes("watch")){
+    if (window.location.pathname.match(/(watch|shorts)/)){
         waitForCommentsToLoad();
         oldComments == null
     }
