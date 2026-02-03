@@ -38,7 +38,7 @@ function throttle(func, delay=500){
     }
 }
 
-const API = "youtubebotdetector-production.up.railway.app/" //"http://localhost:3000/"
+const API = "http://localhost:3000/" // "youtubebotdetector-production.up.railway.app/" 
 let serverRunning = false
 async function postToAPI(path, data) {
     try {
@@ -71,20 +71,29 @@ function stripEmojis(text){
 let oldComments;
 const flaggedEmojisSet = new Set(flaggedEmojis)
 
-function checkForBotMessage({username, text}){
+function checkForBotComment(username, text){
     const messageData = {}
-    const emojiRegex = /(\p{Extended_Pictographic}(?:\u200D\p{Extended_Pictographic})*)/gu;
-    const hasEmojis = text.match(emojiRegex)
-    let flags = 0
+
+    // check emojis`
+    const emojiRegex = /(\p{Extended_Pictographic}(?:\u200D\p{Extended_Pictographic})*)/u;
+    messageData.hasEmojis = emojiRegex.test(text)
+    messageData.endsWithEmojis = emojiRegex.test(text.slice(-6))
+
     // username check
-    messageData.hasFemaleNameInUsername = isBotUsername(username)
+    isBotUsername(username, messageData)
+
+    // word count
+    const words = text.trim().split(/\s+/);
+    messageData.wordCount = words.length;
+    messageData.isShortComment = messageData.wordCount <= 4
+
     // emojis
+    messageData.flaggedEmojiCount = 0
     if (hasEmojis){
-        flags += hasEmojis.length
         for (let emoji of hasEmojis){
             if (flaggedEmojisSet.has(emoji)){
-                flags += 5
                 messageData.hasFlaggedEmoji = true
+                messageData.flaggedEmojiCount++
             }
         }
         
@@ -94,7 +103,6 @@ function checkForBotMessage({username, text}){
     if (oldComments == null) oldComments = new Set();
     const cleanedText = stripEmojis(text) // bots copy comments and append emojis at the end
     if (oldComments.has(cleanedText)){
-        flags += 1000000 // for sure a bot
         messageData.isDuplicateComment = true
     }
     else {
@@ -102,49 +110,42 @@ function checkForBotMessage({username, text}){
     }
 
     // check common phrases
-    const commonBotPhrases = /(genuine|i needed th(is|at)|ress?onate|emotionally|that'?s rare|colorful|adore|just being(?: so)? real|confident|hits?( me)? deep)/i
-    if (commonBotPhrases.test(text)){
-        flags += 1000
-        messageData.hasCommonBotPhrases = true
-    }
-
+    const commonBotPhrases = /(genuinel?y?|i needed th(is|at)|ress?onate|emotionally|that'?s rare|colorful|adore|just being(?: so)? real|confident|hits?( me)? deep)/ig
+    messageData.hasCommonBotPhrases = commonBotPhrases.test(text)
+    messageData.commonBotPhrasesCount = (text.match(commonBotPhrases) || []).length
     // check for time stamp
     const hasTimeStamp = /\d?\d:\d\d/
-    if (hasTimeStamp.test(text)){
-        flags -= 1000 // probably human
-        messageData.hasTimeStamp = true
-    }
+    messageData.hasTimeStamp = hasTimeStamp.test(text)
 
-    // ! spam
-    let exclamationCount = text.match(/!+(?:.)/g) || []
+    // !|? spam
+    messageData.exclamationCount = text.split(/!/g).length
+    messageData.punctuationClusters = (text.match(/[!?]{2,}/g) || []).length;
 
-    if (exclamationCount.length > 3){
-        flags += 10
-        messageData.exclamationSpam = true
-    }
     console.log(username, ": ", messageData)
 
-    return true
-    // return messageData
+    return messageData
 }
 
 
 const femaleNamesRegex = new RegExp(femaleNames
-                                    .map(n => n.replace(/[.*+?^${}()|[\]\\]/g))
+                                    .map(n => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
                                     .join('|')
                                     , "i")
 
-function isBotUsername(username) {
+function isBotUsername(username, messageData) {
     console.log("checking: ", username)
-    const crillicRegex = /^\p{Script=Cyrillic}+/u
-    const cleanedUsername = username.slice(1).trim()
-    if (cleanedUsername.match(crillicRegex)){
-        return true;
-    }
+    const crillicRegex = /\p{Script=Cyrillic}+/u
+    
+    messageData.hasCyrillicUsername = crillicRegex.test(username)
 
+    // test entropy
+    const uniqueChars = (new Set(username)).size
+    messageData.usernameEntropy = uniqueChars / username.length
+
+    const cleanedUsername = username.slice(1).trim()
     // console.log("match: ", cleanedUsername.match(femaleNamesRegex))
 
-    return femaleNamesRegex.test(cleanedUsername)
+    messageData.hasFemaleNameInUsername = femaleNamesRegex.test(cleanedUsername)
 }
 
 function checkProfileWithYTInitialData(profileUrl, username) {
@@ -156,6 +157,9 @@ function checkProfileWithYTInitialData(profileUrl, username) {
                     resolve(false);
                     return;
                 }
+
+                const hasVideos = ytInitialData.contents.twoColumnBrowseResultsRenderer.autoplay
+                if (hasVideos) resolve(false)
 
                 const ytInitialData = response.ytInitialData;
 
@@ -176,13 +180,13 @@ function checkProfileWithYTInitialData(profileUrl, username) {
                         ?.urlEndpoint;
 
                 if (externalLink 
-                    && !/(?:youtube){2}|tiktok|twitch|discord|twitter|insta|x\.com/i
+                    && !/(?:youtube){2}|channel|tiktok|twitch|discord|twitter|insta|x\.com/i
                     .test(externalLink.url)) {
                     resolve(true);
                     return;
                 }
 
-                const descriptionRegex = /(link|click|find me|onlyfans|dating|💋|👇|💦|🍓|🍒|🍑)/i;
+                const descriptionRegex = /(link|click|find me|onlyfans|dating|💋|👇|💦|🍓|🍒|🍑|[\u0250-\u02AF\u1D00-\u1D7F\uA720-\uA7FF])/ui;
 
                 const description = ytInitialData
                     ?.header?.pageHeaderRenderer?.content
@@ -203,6 +207,14 @@ function checkProfileWithYTInitialData(profileUrl, username) {
                     resolve(true);
                     return;
                 }
+
+                const linkedChannelRabbitHole = ytInitialData.contents
+                    ?.twoColumnBrowseResultsRenderer?.tabs[0]?.tabRenderer
+                    ?.content?.sectionListRenderer?.contents[0]
+                    ?.itemSectionRenderer?.contents[0]
+                    ?.shelfRenderer?.content?.horizontalListRenderer?.items
+                
+                if (linkedChannelRabbitHole) resolve(true)
 
                 resolve(false);
             }
@@ -225,11 +237,6 @@ function storeCommentDataInExtension(commentInfo){
     }
 }
 
-const throttleSavedData = throttle(data => {
-    for (let commentInfo of data){
-        postCommentDataToServer(commentInfo)
-    }
-}, 1000)
 
 function loadSavedCommentData(){
     try {
@@ -250,15 +257,6 @@ async function scanComment(comment) {
     // check messages and usernames
     const commentInfo = grabCommentInfo(comment)
     commentInfo.bot = false
-    // comment.style.border = '2px solid blue';
-    if (!checkForBotMessage(commentInfo)){
-        console.log(`${commentInfo.username} is not a bot`)
-
-        let res = await postCommentDataToServer({data:commentInfo, list:false})
-        // console.log(res)
-        if (!res) storeCommentDataInExtension({data:commentInfo, list:false})
-        return
-    }
 
     let botProfile = await checkProfile(commentInfo.username)
     if (!botProfile){
@@ -295,7 +293,9 @@ function grabCommentInfo(comment){
 
     let pfp = comment.querySelector("img").src
 
-    return { username: username, text: text, pfp: pfp }
+    let data = checkForBotComment(username, text)
+
+    return { username: username, text: text, pfp: pfp, data: data }
 }
 
 
@@ -445,25 +445,25 @@ const visibilityObserver = new IntersectionObserver(entries => {
 
 // // common bio --> ʜɪ ʜᴀɴᴅꜱᴏᴍᴇ, ᴡᴀɴᴛ ᴀ ᴅᴀᴛᴇ ᴡɪᴛʜ ᴍᴇ? ɪᴛ’ꜱ ᴇᴀꜱʏ, ꜰɪɴᴅ ᴍᴇ ʙᴇʟᴏᴡ
 // //            -->
-// // @DianneR.Mullins --> '"Youre dad grips my hair while i give brain💝💘🙏💸"\n -Not me 💀💀'
-// // @KaterinaLoveMaker --> 'Clix or me ?!! vote For Me ✨ 🖤!!!🧡!!!😘!!!🫶🏻' <-- ! spam
-// // botted likes 
-// // @Владислава Лидия Марина <--russain names?
-// // @TaylorReed-j7u --> "Can’t get over how genuine you are, this is the kind of content that sticks."
-// // @AngelinaBarbara-e7d --> I adore how she simply gets up and exits the water without incident as soon as she receives the life ring 😂.
-// // @MinhNgogo-e7f --> what even is this channel and why am i hooked 🧡💖
-// // @Phanphuongomuhqhq --> just here like 🍒🧡
-// // @ÝTrươngng-w7z --> Thank you so much for your colorful and creative videos. Your videos are a real work of art.💡‍♀️🐡
-// // @NgọcCaoao --> Keep on creating great content. Your videos are always neat and informative.😹🥩🥥
-// // @AmandaLewis-x3t --> I needed this kind of truth today, thank you.
-// // @HannahClark-s7d --> You shine without even trying — that’s rare.
-// // @VoVanTuTu --> this is youtube at its finest 😻👅
-// // @HaYenNhihi --> % confused, % impressed 🔥😛
-// // @BiancaTudore --> Clients are able to write.  You elevated Benjamin to customer even though he was a Case employee. <-- stealing some on else's comment
-// // @AmberPhillips-k4b --> Your chill presence is a reminder that realness still exists.
-// // @JosephineBrooks-n2z --> Can’t get over how genuine you are, this is the type of content that matters.
-// // @AuroraSavannahLucy --> i woke up today feeling sad about a recent break up with my ex of 2 years... your videos have been an emotional crutch to me since I'm a very emotionally dependent person and have a hard time realizing what I am feeling. Your reflections during these videos ressonate a shit ton with me, so thank you, Ken. You are an amazing person 😓😓😔😔
-// // @HarperWilson-o9k--> Every second of this felt raw, no filters needed.
+// @DianneR.Mullins --> '"Youre dad grips my hair while i give brain💝💘🙏💸"\n -Not me 💀💀'
+// @KaterinaLoveMaker --> 'Clix or me ?!! vote For Me ✨ 🖤!!!🧡!!!😘!!!🫶🏻' <-- ! spam
+// botted likes 
+// @Владислава Лидия Марина <--russain names?
+// @TaylorReed-j7u --> "Can’t get over how genuine you are, this is the kind of content that sticks."
+// @AngelinaBarbara-e7d --> I adore how she simply gets up and exits the water without incident as soon as she receives the life ring 😂.
+// @MinhNgogo-e7f --> what even is this channel and why am i hooked 🧡💖
+// @Phanphuongomuhqhq --> just here like 🍒🧡
+// @ÝTrươngng-w7z --> Thank you so much for your colorful and creative videos. Your videos are a real work of art.💡‍♀️🐡
+// @NgọcCaoao --> Keep on creating great content. Your videos are always neat and informative.😹🥩🥥
+// @AmandaLewis-x3t --> I needed this kind of truth today, thank you.
+// @HannahClark-s7d --> You shine without even trying — that’s rare.
+// @VoVanTuTu --> this is youtube at its finest 😻👅
+// @HaYenNhihi --> % confused, % impressed 🔥😛
+// @BiancaTudore --> Clients are able to write.  You elevated Benjamin to customer even though he was a Case employee. <-- stealing some on else's comment
+// @AmberPhillips-k4b --> Your chill presence is a reminder that realness still exists.
+// @JosephineBrooks-n2z --> Can’t get over how genuine you are, this is the type of content that matters.
+// @AuroraSavannahLucy --> i woke up today feeling sad about a recent break up with my ex of 2 years... your videos have been an emotional crutch to me since I'm a very emotionally dependent person and have a hard time realizing what I am feeling. Your reflections during these videos ressonate a shit ton with me, so thank you, Ken. You are an amazing person 😓😓😔😔
+// @HarperWilson-o9k--> Every second of this felt raw, no filters needed.
 
 // // Reused pfps: structure =
 // // <div id='author-thumbnail'>

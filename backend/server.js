@@ -4,33 +4,13 @@ import fs from "fs"
 
 const app = express()
 const PORT = process.env.PORT || 3000
-
-/*
-    TODO:
-        replace csv with postgres
-        create model
-
-*/
-
-// app.use((req, res, next) => {
-//     res.setHeader("Access-Control-Allow-Origin", "*");
-//     res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-//     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-//     res.setHeader("Access-Control-Allow-Private-Network", "true");
-  
-//     if (req.method === "OPTIONS") {
-//       return res.sendStatus(204);
-//     }
-  
-//     next();
-//   });
   
 
 app.use(express.json())
 app.use(cors({ origin: "*", methods: ["GET", "POST"] }))
 
 app.get('/', (req, res)=>{
-    res.sendStatus(200).json({status:"running"})
+    res.sendStatus(200).json({ status: "running" })
 })
 
 // write training data
@@ -47,7 +27,7 @@ app.post("/api/collect", async (req, res) =>{
         return res.json(resultArray)
     }
     else {
-        const {status, message} = await writeDataToCSV(data)
+        const { status, message } = await writeDataToCSV(data)
         return res.status(status).json(message)
     }
 })
@@ -73,7 +53,21 @@ app.post("/api/predict", (req, res) => {
     }
 })
 
-function writeDataToCSV({ username, text, pfp, bot}){
+function writeDataToCSV({ username, text, pfp, bot, data: hasCyrillicUsername,
+          usernameEntropy,
+          hasFemaleNameInUsername,
+          hasEmojis,
+          endsWithEmojis,
+          wordCount, 
+          isShortComment, 
+          hasFlaggedEmoji, 
+          flaggedEmojiCount, 
+          isDuplicateComment, 
+          hasCommonBotPhrases, 
+          commonBotPhrasesCount, 
+          hasTimeStamp, 
+          exclamationCount, 
+          punctuationClusters}){
     return new Promise((resolve, reject)=> {
         if (!text || !username){
             return resolve({ status:400, message:{ error: "Missing Data" }})
@@ -85,7 +79,21 @@ function writeDataToCSV({ username, text, pfp, bot}){
             safe(username),
             safe(text),
             safe(pfp),
-            safe(bot)
+            safe(bot),
+            usernameEntropy,
+          hasFemaleNameInUsername,
+          hasEmojis,
+          endsWithEmojis,
+          wordCount, 
+          isShortComment, 
+          hasFlaggedEmoji, 
+          flaggedEmojiCount, 
+          isDuplicateComment, 
+          hasCommonBotPhrases, 
+          commonBotPhrasesCount, 
+          hasTimeStamp, 
+          exclamationCount, 
+          punctuationClusters
         ].join(",") + "\n"
 
         fs.appendFile(
