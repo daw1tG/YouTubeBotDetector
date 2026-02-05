@@ -43,24 +43,25 @@ These are converted into numeric features for both:
 Chrome Extension
 │
 ├── Content Script (botDetector.js)
-│ ├── Observes new comments via MutationObserver
-│ ├── Extracts behavioral features
-│ ├── Flags likely bots in the UI
-│ └── Sends labeled data to backend
+│   ├── Observes new comments
+│   ├── Extracts features
+│   ├── Flags likely bots in the UI
+│   └── Sends labeled data to backend
 │
 ├── Background Service Worker
-│ └── Fetches supplemental metadata
+│   └── Fetches ytInitialData for profile analysis
 │
 └── Local Storage
-└── Caches data when backend is offline
+    └── Caches data when backend is offline
 
 Node.js Backend (Express)
 │
-├── POST /api/collect → stores labeled training data
-└── POST /api/predict → returns bot probability (ML-ready)
+├── POST /api/collect   → stores training data (CSV)
+└── POST /api/predict   → returns bot probability (ML-ready)
 
 Python ML Pipeline (scikit-learn)
-└── Trains an explainable classifier on extracted features
+└── Trains a classifier on extracted features
+
 ---
 
 ## 🛠 Tech Stack
