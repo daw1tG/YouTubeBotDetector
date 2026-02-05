@@ -3,6 +3,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.linear_model import LogisticRegression
 import pandas as pd
+import joblib
 
 # data = { 
 #     hasCyrillicUsername,

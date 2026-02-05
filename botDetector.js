@@ -79,18 +79,10 @@ function checkForBotComment(username, text){
     messageData.hasEmojis = emojiRegex.test(text)
     messageData.endsWithEmojis = emojiRegex.test(text.slice(-6))
 
-    // username check
-    isBotUsername(username, messageData)
-
-    // word count
-    const words = text.trim().split(/\s+/);
-    messageData.wordCount = words.length;
-    messageData.isShortComment = messageData.wordCount <= 4
-
-    // emojis
     messageData.flaggedEmojiCount = 0
-    if (hasEmojis){
-        for (let emoji of hasEmojis){
+    const emojis = text.match(emojiRegex)
+    if (emojis){
+        for (let emoji of emojis.input){
             if (flaggedEmojisSet.has(emoji)){
                 messageData.hasFlaggedEmoji = true
                 messageData.flaggedEmojiCount++
@@ -98,6 +90,14 @@ function checkForBotComment(username, text){
         }
         
     }
+
+    // username check
+    isBotUsername(username, messageData)
+
+    // word count
+    const words = text.trim().split(/\s+/);
+    messageData.wordCount = words.length;
+    messageData.isShortComment = messageData.wordCount <= 4
 
     // check duplicate comment
     if (oldComments == null) oldComments = new Set();
@@ -158,10 +158,10 @@ function checkProfileWithYTInitialData(profileUrl, username) {
                     return;
                 }
 
+                const ytInitialData = response.ytInitialData;
+
                 const hasVideos = ytInitialData.contents.twoColumnBrowseResultsRenderer.autoplay
                 if (hasVideos) resolve(false)
-
-                const ytInitialData = response.ytInitialData;
 
                 if (ytInitialData
                     .contents
