@@ -76,15 +76,16 @@ function checkForBotComment(username, text){
 
     // check emojis`
     const emojiRegex = /(\p{Extended_Pictographic}(?:\u200D\p{Extended_Pictographic})*)/u;
-    messageData.hasEmojis = emojiRegex.test(text)
-    messageData.endsWithEmojis = emojiRegex.test(text.slice(-6))
+    messageData.hasEmojis = emojiRegex.test(text) ? 1:0
+    messageData.endsWithEmojis = emojiRegex.test(text.slice(-6)) ? 1:0
 
     messageData.flaggedEmojiCount = 0
+    messageData.hasFlaggedEmoji = 0
     const emojis = text.match(emojiRegex)
     if (emojis){
         for (let emoji of emojis.input){
             if (flaggedEmojisSet.has(emoji)){
-                messageData.hasFlaggedEmoji = true
+                messageData.hasFlaggedEmoji = 1
                 messageData.flaggedEmojiCount++
             }
         }
@@ -97,13 +98,14 @@ function checkForBotComment(username, text){
     // word count
     const words = text.trim().split(/\s+/);
     messageData.wordCount = words.length;
-    messageData.isShortComment = messageData.wordCount <= 4
+    messageData.isShortComment = messageData.wordCount <= 4 ? 1:0
 
     // check duplicate comment
     if (oldComments == null) oldComments = new Set();
     const cleanedText = stripEmojis(text) // bots copy comments and append emojis at the end
+    messageData.isDuplicateComment = 1
     if (oldComments.has(cleanedText)){
-        messageData.isDuplicateComment = true
+        messageData.isDuplicateComment = 1
     }
     else {
         oldComments.add(cleanedText)
@@ -111,11 +113,11 @@ function checkForBotComment(username, text){
 
     // check common phrases
     const commonBotPhrases = /(genuinel?y?|i needed th(is|at)|ress?onate|emotionally|that'?s rare|colorful|adore|just being(?: so)? real|confident|hits?( me)? deep)/ig
-    messageData.hasCommonBotPhrases = commonBotPhrases.test(text)
+    messageData.hasCommonBotPhrases = commonBotPhrases.test(text) ? 1:0
     messageData.commonBotPhrasesCount = (text.match(commonBotPhrases) || []).length
     // check for time stamp
     const hasTimeStamp = /\d?\d:\d\d/
-    messageData.hasTimeStamp = hasTimeStamp.test(text)
+    messageData.hasTimeStamp = hasTimeStamp.test(text) ? 1:0
 
     // !|? spam
     messageData.exclamationCount = text.split(/!/g).length
@@ -136,7 +138,7 @@ function isBotUsername(username, messageData) {
     console.log("checking: ", username)
     const crillicRegex = /\p{Script=Cyrillic}+/u
     
-    messageData.hasCyrillicUsername = crillicRegex.test(username)
+    messageData.hasCyrillicUsername = crillicRegex.test(username) ? 1:0
 
     // test entropy
     const uniqueChars = (new Set(username)).size
@@ -145,7 +147,7 @@ function isBotUsername(username, messageData) {
     const cleanedUsername = username.slice(1).trim()
     // console.log("match: ", cleanedUsername.match(femaleNamesRegex))
 
-    messageData.hasFemaleNameInUsername = femaleNamesRegex.test(cleanedUsername)
+    messageData.hasFemaleNameInUsername = femaleNamesRegex.test(cleanedUsername) ? 1:0
 }
 
 function checkProfileWithYTInitialData(profileUrl, username) {
@@ -170,23 +172,40 @@ function checkProfileWithYTInitialData(profileUrl, username) {
                 
                 let profilePic = ytInitialData.metadata
                         ?.channelMetadataRenderer
-                        ?.avatar.thumbnails
+                        ?.avatar?.thumbnails[0]?.url
 
                 const externalLink = ytInitialData?.header?.pageHeaderRenderer
                         ?.content?.pageHeaderViewModel
                         ?.attribution?.attributionViewModel
                         ?.text?.commandRuns?.[0]
                         ?.onTap?.innertubeCommand
-                        ?.urlEndpoint;
+                        ?.urlEndpoint
 
-                if (externalLink 
-                    && !/(?:youtube){2}|channel|tiktok|twitch|discord|twitter|insta|x\.com/i
-                    .test(externalLink.url)) {
-                    resolve(true);
-                    return;
+                // if (externalLink 
+                //     && !/youtube.com\/(watch|@|shorts)|tiktok|twitch|discord|twitter|insta|x\.com/i
+                //     .test(externalLink.url)) {
+                //         console.log(username, ": external link")
+                //     resolve(true);
+                //     return;
+                // }
+
+                if (externalLink){
+                    const url = externalLink.url.toLowerCase();
+                    
+                    const legitimatePlatforms = /youtube\.com\/(watch|@|shorts)|tiktok|twitch|discord|twitter|x\.com|instagram|facebook|spotify|soundcloud|patreon|github|linkedin|bandcamp|vimeo/i;
+                    
+                    const suspiciousPatterns = [
+                        /\.(xyz|top|click|link|online|site|live|cam|buzz)$/i, // suspicious TLDs
+                        /onlyfans|fansly|dating|casino|bet|whatsapp|telegram/i, // bot keywords
+                        /bit\.ly|tinyurl|shorturl|cutt\.ly|t\.co/i, // URL shorteners (often used by bots)
+                        /free|earn|money|crypto|nft|prize|gift|winner/i, // scam keywords in URL
+                        /\d{4,}/, // long number sequences in domain
+                    ];
+                    const isSuspicious = suspiciousPatterns.some(pattern => pattern.test(url))
+                    if (!legitimatePlatforms.test(url) && isSuspicious){ resolve(true) }
                 }
 
-                const descriptionRegex = /(link|click|find me|onlyfans|dating|💋|👇|💦|🍓|🍒|🍑|[\u0250-\u02AF\u1D00-\u1D7F\uA720-\uA7FF])/ui;
+                const descriptionRegex = /(link|click |find me|onlyfans|dating|18|💋|👇|💦|🍓|🍒|🍑|[\u0250-\u02AF\u1D00-\u1D7F\uA720-\uA7FF])/ui;
 
                 const description = ytInitialData
                     ?.header?.pageHeaderRenderer?.content
@@ -204,6 +223,7 @@ function checkProfileWithYTInitialData(profileUrl, username) {
 
                 if (descriptionRegex.test(description) ||
                     descriptionRegex.test(description2)) {
+                        console.log(username, ": description")
                     resolve(true);
                     return;
                 }
@@ -214,7 +234,10 @@ function checkProfileWithYTInitialData(profileUrl, username) {
                     ?.itemSectionRenderer?.contents[0]
                     ?.shelfRenderer?.content?.horizontalListRenderer?.items
                 
-                if (linkedChannelRabbitHole) resolve(true)
+                if (linkedChannelRabbitHole && description2.match(/^Subscriptions$/)) {
+                    console.log(username, ": rabbit hole")
+                    resolve(true)
+                }
 
                 resolve(false);
             }
@@ -244,8 +267,8 @@ function loadSavedCommentData(){
             setTimeout(loadSavedCommentData, 10000)
             return
         }
-        chrome.runtime.sendMessage({ action: "retrieve data"}, data => {
-            postCommentDataToServer({data:data, list:true})
+        chrome.runtime.sendMessage({ action: "retrieve data"}, async (data) => {
+            batchSeverPost(data)
         })
     } catch (error) {
         console.log("Failed to retrieve stored comment data")
@@ -253,29 +276,49 @@ function loadSavedCommentData(){
     }
 }
 
+let commentDataset;
+async function batchSeverPost(comments){
+    const chunkSize = 1000;
+
+    for (let i = 0; i < comments.length; i += chunkSize){
+        const res = await postCommentDataToServer({data:comments.slice(i, i+chunkSize), list:true})
+        if (!res){
+            // server is offline
+            storeCommentDataInExtension(comments.slice(i))
+            console.log(commentDataset)
+            comments = []
+            console.log(commentDataset)
+        }
+        else {
+            if (res.message == "Success"){
+                if (res.unadded.length) storeCommentDataInExtension(res.unadded.map(x => x.data))
+            }
+            else {
+                console.log(res.error)
+            }
+        }
+    }
+}
+
+window.addEventListener("beforeunload", batchSeverPost(commentDataset))
+
 async function scanComment(comment) {
     // check messages and usernames
     const commentInfo = grabCommentInfo(comment)
-    commentInfo.bot = false
+    commentInfo.Bot = 0
 
-    let botProfile = await checkProfile(commentInfo.username)
-    if (!botProfile){
-        let res = await postCommentDataToServer({data:commentInfo, list:false})
-        // console.log(res)
-        if (!res) storeCommentDataInExtension(commentInfo)
-        return
-    }
-    else {
-        console.log('🚨 Potential Bot Detected:', commentInfo.username);
+    if (!commentDataset) commentDataset = []
+    let botProfile = await checkProfile(commentInfo.Username)
+    if (botProfile) {
+        console.log('🚨 Potential Bot Detected:', commentInfo.Username);
         comment.style.border = '2px solid white';
         comment.style.backgroundColor = '#8B0000';
 
-        commentInfo.bot = true
-        let res = await postCommentDataToServer({data:commentInfo, list:false})
-        if (!res) storeCommentDataInExtension(commentInfo)
-        // console.log(res)
-        return
+        commentInfo.Bot = 1
     }
+
+    commentDataset.push(commentInfo)
+    if (commentDataset.length >= 50) batchSeverPost(commentDataset)
 
     // comment.remove();
 }
@@ -286,39 +329,21 @@ function grabCommentInfo(comment){
         console.log("no authorSpan")
         return;
     }
-    const username = authorSpan.textContent.trim();
+    const Username = authorSpan.textContent.trim();
 
     let message = comment.querySelector("yt-attributed-string#content-text")
-    let text = message.childNodes[0].textContent
+    let Text = message.childNodes[0].textContent
 
-    let pfp = comment.querySelector("img").src
+    let Pfp = comment.querySelector("img").src
 
-    let data = checkForBotComment(username, text)
+    let data = checkForBotComment(Username, Text)
 
-    return { username: username, text: text, pfp: pfp, data: data }
+    return { Username: Username, Text: Text, Pfp: Pfp, data: data }
 }
 
 
 let observer
 function watchComments(commentsSection) {
-    const throttleWithArrayArg = (comments)=>{
-        for (const comment of comments){
-            if (comment && comment.tagName === "YTD-COMMENT-THREAD-RENDERER") {
-                // console.log("New comment loaded: ", comment);
-                scanComment(comment);
-            }
-        }
-    }
-
-    const throttleWithSingleArg = (comment)=>{
-        if (comment && comment.tagName === "YTD-COMMENT-THREAD-RENDERER") {
-            // console.log("New comment loaded: ", comment);
-            scanComment(comment);
-        }
-    }
-    const proccessNewComments = throttle(throttleWithArrayArg, 500)
-
-    let newComments = [];
     observer = new MutationObserver((mutations) => {
         for (const mutation of mutations) {
             for (const node of mutation.addedNodes) {
@@ -345,9 +370,10 @@ function watchComments(commentsSection) {
     console.log("Watching for new YouTube comments...");
 }
 
+let commentsSection
 function waitForCommentsToLoad(){
     let commentsContainer
-    let commentsSection
+    
     if (window.location.pathname.match(/shorts/)){
         commentsSection = document.querySelector("div#contents > ytd-comment-thread-renderer")?.parentNode
     }
@@ -361,6 +387,7 @@ function waitForCommentsToLoad(){
         setTimeout(waitForCommentsToLoad, 500);
     }
     else{
+        commentSectionObserver.observe(commentsSection)
         watchComments(commentsSection)
     }
 }
@@ -399,6 +426,7 @@ window.addEventListener("scroll", () => {
     }, 150)
 }, { passive: true })
 
+
 const processNewCommentsWithIntersectionObserver = throttle((comments) => {
     for (const comment of comments) {
         scanComment(comment)
@@ -433,6 +461,19 @@ const visibilityObserver = new IntersectionObserver(entries => {
      
 }, { threshold: 0.15})
 
+
+let commentSectionObserver = new IntersectionObserver(entry => {
+    if (entry.isIntersecting && observer){
+        entry.target.style.border = '2px solid green'
+        console.log("connecting observer")
+        // watchComments()
+        //observer.observe(commentsSection, { childList: true })
+    }
+    else if ((!entry.isIntersecting || document.hidden) && observer){
+        console.log("disconnecting observer")
+        // observer?.disconnect()
+    }
+}, {threshold: 0.15 })
   
 
 

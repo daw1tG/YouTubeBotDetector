@@ -2,7 +2,10 @@ import regex as re
 from arrays import femaleNames, flagged_emojis
 import csv
 import pandas as pd
+import sqlite3
+import os
 
+CSV_HEADER = "Username,Text,PFP,Bot,hasCyrillicUsername,usernameEntropy,hasFemaleNameInUsername,hasEmojis,endsWithEmojis,wordCount,isShortComment,hasFlaggedEmoji,flaggedEmojiCount,isDuplicateComment,hasCommonBotPhrases,commonBotPhrasesCount,hasTimeStamp,exclamationCount,punctuationClusters\n"
 ORDER = [
     "Username",
     "Text",
@@ -111,14 +114,19 @@ def reformat_data(username, text, is_bot, **extra):
         re.findall(r"[!?]{2,}", text)
     )
 
-    message_data['Bot'] = int(is_bot)
+    message_data["Username"], message_data["Text"] = username, text
+    try:
+        message_data['Bot'] = int(is_bot)
+    except Exception:
+        is_bot = 1 if (is_bot == "true" or is_bot == "1") else 0
+        message_data['Bot'] = is_bot
 
     return message_data
 
 
 #kaggle dataset
 def import_kaggle_dataset():
-    with open('YouTubeBotDetector/MLmodel/downloaded-bot-dataset.csv', newline='') as csvfile:
+    with open('YouTubeBotDetector/MLmodel/Youtube-Spam-Dataset.csv', newline='') as csvfile:
         reader = csv.DictReader(csvfile, delimiter=',')
         new_lines =[]
         for row in reader:
@@ -130,13 +138,42 @@ def import_kaggle_dataset():
             new_lines.append(data)
 
         df = pd.DataFrame(new_lines)[ORDER]
-        df.to_csv("YoutubeBotDetector/MLmodel/downloaded-bot-data-final.csv", index=False)
+        df.to_csv("YoutubeBotDetector/MLmodel/downloaded-bot-data-final.csv", index=False, mode="a")
         pass
 
 
 def update_final_data():
-    with open("YoutubeBotDetector/MLmodel/downloaded-bot-data-final.csv") as csvfile:
+    new_lines = []
+    with open("YoutubeBotDetector/backend/bot-data.csv", "r") as csvfile:
         reader = csv.DictReader(csvfile, delimiter=',')
+        for row in reader:
+            user, text, is_bot = row["Username"], row["Text"], 1 if row["Bot"] == "true" else 0
+            row["Bot"] = is_bot
+            if not user:
+                continue
+            data = reformat_data(user, text, is_bot) if len(list(row.keys())) < 5 else row
+            
+            new_lines.append(data)
+
+
+    df = pd.DataFrame(new_lines)[ORDER]
+    df.to_csv("YoutubeBotDetector/MLmodel/downloaded-bot-data-final.csv", index=False, mode="a")
+
+    with open("YoutubeBotDetector/backend/bot-data.csv", "w") as f:
+        f.write(CSV_HEADER)
     return
 
 # import_kaggle_dataset()
+#update_final_data()
+
+def get_data():
+    db_path = os.path.join(os.path.dirname(__file__), "training-data.db")
+    with sqlite3.connect(db_path) as database:
+        database.row_factory = sqlite3.Row
+        db = database.cursor()
+        db.execute("SELECT * FROM comments")
+        rows = db.fetchall()
+
+        return pd.DataFrame([dict(row) for row in rows])[ORDER]
+# get_data()
+pass

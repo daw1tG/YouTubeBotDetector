@@ -104,22 +104,22 @@ function filterNode(node){
 }
 
 let observer;
-window.addEventListener("yt-navigate-finish", () => {
+// window.addEventListener("yt-navigate-finish", () => {
 
-    if (observer) observer.disconnect();
-    const debouncedCheckInitial = debounce(checkInitial, 1500);
+//     if (observer) observer.disconnect();
+//     const debouncedCheckInitial = debounce(checkInitial, 1500);
 
-    observer = new MutationObserver((mutationList, observer) => {
-        let foundRelevant = false
-        for (const mutation of mutationList) {
-            for (const node of mutation.addedNodes){ // node == "ytd-rich-item-renderer" if on homepage, else node == targets below
-                foundRelevant ||= filterNode(node)
-            }
-        }
-        if (foundRelevant) debouncedCheckInitial();
-    })
+//     observer = new MutationObserver((mutationList, observer) => {
+//         let foundRelevant = false
+//         for (const mutation of mutationList) {
+//             for (const node of mutation.addedNodes){ // node == "ytd-rich-item-renderer" if on homepage, else node == targets below
+//                 foundRelevant ||= filterNode(node)
+//             }
+//         }
+//         if (foundRelevant) debouncedCheckInitial();
+//     })
 
-    waitForContentsToLoad(observer)
-  });
+//     waitForContentsToLoad(observer)
+//   });
 
-  // document.querySelector("#player-ads > ytd-player-legacy-desktop-watch-ads-renderer > ytd-companion-slot-renderer")
+//   // document.querySelector("#player-ads > ytd-player-legacy-desktop-watch-ads-renderer > ytd-companion-slot-renderer")

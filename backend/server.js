@@ -1,9 +1,21 @@
 import express from "express"
+import Database from "better-sqlite3"
 import cors from "cors"
 import fs from "fs"
 
+import path from "path";
+import { fileURLToPath } from "url";
+
+import crypto from "crypto"
+import { parse } from "csv-parse/sync"
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+
 const app = express()
 const PORT = process.env.PORT || 3000
+const mlServer = "http://localhost:8000/"
   
 
 app.use(express.json())
@@ -15,33 +27,46 @@ app.get('/', (req, res)=>{
 
 // write training data
 app.post("/api/collect", async (req, res) =>{
-    const { data, list } = req.body
+    // const { data, list } = req.body
+    // // console.log(data)
 
-    if (list){
-        console.log("writing stored comments")
-        let resultArray = []
-        for (let comment of data){
-            resultArray.push(await writeDataToCSV(comment))
-        }
-        console.log("writing complete")
-        return res.json(resultArray)
-    }
-    else {
-        const { status, message } = await writeDataToCSV(data)
-        return res.status(status).json(message)
+    // if (list){
+    //     console.log("writing stored comments")
+    //     let resultArray = []
+    //     for (let comment of data){
+    //         resultArray.push(await writeDataToCSV(comment))
+    //     }
+    //     console.log("writing complete")
+    //     // return res.json(resultArray)
+    // }
+    // else {
+    //     const { status, message } = await writeDataToCSV(data)
+    //     //return res.status(status).json(message)
+    // }
+
+    const comments = req.body.data
+    // console.log(comments).slice(0,5)
+    if (!comments) return;
+    try {
+        const unadded = pushToDB(comments)
+        console.log(`Successfully stored ${comments.length - unadded.length} comments, failed to add ${unadded.length} comments`)
+        res.status(200).json({ message: "Success", inserted: comments.length - unadded.length, unadded: unadded })
+    } catch (err) {
+        console.log("Failed to store data")
+        res.status(500).json({ message: "Failure", error: err })
     }
 })
 
 // get prediction
-app.post("/api/predict", (req, res) => {
+app.post("/api/predict", async (req, res) => {
     try {
-        const { username, text, pfp } = req.body
+        const { Username, Text, Pfp } = req.body
 
-        if (!text || !username){ // pfp not vital
+        if (!Text || !Username){ // pfp not vital
             return res.status(400).json({ error: "Missing Data" })
         }
 
-        let botProbability = mlModel(req.body) // placeholder
+        let botProbability = await mlModel(req.body) // placeholder
 
         res.json({
             probabilityScore: botProbability,
@@ -53,7 +78,7 @@ app.post("/api/predict", (req, res) => {
     }
 })
 
-function writeDataToCSV({ username, text, pfp, bot, data: hasCyrillicUsername,
+function writeDataToCSV({ Username, Text, Pfp, Bot, data: {hasCyrillicUsername, 
           usernameEntropy,
           hasFemaleNameInUsername,
           hasEmojis,
@@ -67,19 +92,20 @@ function writeDataToCSV({ username, text, pfp, bot, data: hasCyrillicUsername,
           commonBotPhrasesCount, 
           hasTimeStamp, 
           exclamationCount, 
-          punctuationClusters}){
+          punctuationClusters}}){
     return new Promise((resolve, reject)=> {
-        if (!text || !username){
+        if (!Text || !Username){
             return resolve({ status:400, message:{ error: "Missing Data" }})
         }
 
         const safe = val => `"${String(val).replace(/"/g, '""')}"`
 
         const data = [
-            safe(username),
-            safe(text),
-            safe(pfp),
-            safe(bot),
+            safe(Username),
+            safe(Text),
+            safe(Pfp),
+            safe(Bot),
+            hasCyrillicUsername,
             usernameEntropy,
           hasFemaleNameInUsername,
           hasEmojis,
@@ -95,6 +121,7 @@ function writeDataToCSV({ username, text, pfp, bot, data: hasCyrillicUsername,
           exclamationCount, 
           punctuationClusters
         ].join(",") + "\n"
+        //console.log(hasCyrillicUsername)
 
         fs.appendFile(
             "bot-data.csv",
@@ -105,15 +132,125 @@ function writeDataToCSV({ username, text, pfp, bot, data: hasCyrillicUsername,
                     return resolve({ status:500, message:{ error: "Server error" }})
                 } else {
                     console.log('File has been written successfully.');
-                    return resolve({ status:200, message:{ comment: username }})
+                    return resolve({ status:200, message:{ comment: Username }})
                 }
             }
         )
     })
 }
 
-function mlModel(data){
-    return Math.random()
+
+function pushToDB(comments){
+    const dbPath = path.join(__dirname, "../Mlmodel/training-data.db")
+    console.log(dbPath)
+    const db = new Database(dbPath)
+
+    const unadded = []
+
+    const insert = db.prepare(`INSERT INTO comments (
+        Username,
+        Text,
+        Pfp,
+        Bot,
+        hasCyrillicUsername,
+        usernameEntropy,
+        hasFemaleNameInUsername,
+        hasEmojis,
+        endsWithEmojis,
+        wordCount,
+        isShortComment,
+        hasFlaggedEmoji,
+        flaggedEmojiCount,
+        isDuplicateComment,
+        hasCommonBotPhrases,
+        commonBotPhrasesCount,
+        hasTimeStamp,
+        exclamationCount,
+        punctuationClusters,
+        hash) VALUES (
+        @Username,
+        @Text,
+        @Pfp,
+        @Bot,
+        @hasCyrillicUsername,
+        @usernameEntropy,
+        @hasFemaleNameInUsername,
+        @hasEmojis,
+        @endsWithEmojis,
+        @wordCount,
+        @isShortComment,
+        @hasFlaggedEmoji,
+        @flaggedEmojiCount,
+        @isDuplicateComment,
+        @hasCommonBotPhrases,
+        @commonBotPhrasesCount,
+        @hasTimeStamp,
+        @exclamationCount,
+        @punctuationClusters,
+        @hash)`)
+
+    for (let entry of comments){
+        const { data, ...rest } = entry;
+        const flatComment = { ...rest, ...data };
+        flatComment.hash = hash(flatComment)
+        try {
+            insert.run(flatComment)
+        } catch (err) {
+            if (err && err.code != "SQLITE_CONSTRAINT_UNIQUE") {
+                console.log(err)
+                unadded.push({ data: entry, reason: err})
+            }
+        }
+    }
+
+    db.close()
+
+    return unadded
+}
+
+function hash(comment){
+    const commentString = JSON.stringify(comment, Object.keys(comment).sort())
+    return crypto.createHash("md5").update(commentString).digest("hex")
+}
+
+async function mlModel(data){
+    return await fetch(mlServer+"predict", {
+        method:"POST",
+        headers: { "Content-type": "application/json" },
+        body: JSON.stringify(data)
+    })
+}
+
+app.post("/test", (req, res) => {
+    res.status(200).json({message: "Success", rows:getCommentDataFromCSV(__dirname + "/bot-data.csv")})
+})
+
+const FIELDS = [
+    "Username",
+    "Text",
+    "Bot",
+    "hasCyrillicUsername",
+    "usernameEntropy",
+    "hasFemaleNameInUsername",
+    "hasEmojis",
+    "endsWithEmojis",
+    "wordCount",
+    "isShortComment",
+    "hasFlaggedEmoji",
+    "flaggedEmojiCount",
+    "isDuplicateComment",
+    "hasCommonBotPhrases",
+    "commonBotPhrasesCount",
+    "hasTimeStamp",
+    "exclamationCount",
+    "punctuationClusters"
+]
+function getCommentDataFromCSV(path){
+    const file = fs.readFileSync(path)
+    const rows = parse(file, { columns: true, skip_empty_lines: true })
+    rows.forEach(row => row.Pfp = "")
+    const unadded = pushToDB(rows)
+    return { added:rows.length - unadded.length, unadded: unadded }
 }
 
 app.listen(PORT, () => {
